@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+# Large model files (use Git LFS if needed)
+models/*.pt
+models/*.pth
+models/*.h5
+
+# Large data files
+data/videos/*.mp4
+data/videos/*.webm
+data/videos/*.avi
+data/videos/*.mov
+# Keep the directory structure
+!data/videos/.gitkeep
+
+# Logs
+logs/*.log
+logs/*.txt
+# Keep the directory structure
+!logs/.gitkeep
+
+# Temporary files
+temp/
+*.tmp
+
+# Environment variables
+.env
+.env.local
+
+# Test outputs
+test_output/
+results/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Config (keep structure, maybe ignore sensitive configs)
+# config/*.yaml
+# !config/.gitkeep

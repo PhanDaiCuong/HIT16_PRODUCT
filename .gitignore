@@ -27,18 +27,14 @@ models/*.pt
 models/*.pth
 models/*.h5
 
-data/videos/*.mp4
-data/videos/*.webm
-data/videos/*.avi
-data/videos/*.mov
+# Ignore entire data directory (keep only structure if needed)
+data/
 
-!data/videos/.gitkeep
+# Ignore entire logs directory
+logs/
 
-
-logs/*.log
-logs/*.txt
-
-!logs/.gitkeep
+# Ignore entire scripts directory
+scripts/
 
 
 temp/

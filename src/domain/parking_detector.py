@@ -6,120 +6,179 @@ import cv2
 from ultralytics import YOLO
 
 
-try:
-    from ..utils.configs import (
-        CONFIDENCE_THRESHOLD as DEFAULT_CONFIDENCE,
-        FRAME_SKIP as DEFAULT_FRAME_SKIP,
-        DEVICE as DEFAULT_DEVICE,
-        IMAGE_SIZE as DEFAULT_IMAGE_SIZE,
-        MODEL_PATH as DEFAULT_MODEL_PATH
-    )
-    CONFIG_AVAILABLE = True
-except ImportError:
-    
-    DEFAULT_CONFIDENCE = 0.5
-    DEFAULT_FRAME_SKIP = 5
-    DEFAULT_DEVICE = "cpu"
-    DEFAULT_IMAGE_SIZE = 640
-    DEFAULT_MODEL_PATH = "models/best.pt"
-    CONFIG_AVAILABLE = False
+from ..utils.configs import (
+    CONFIDENCE_THRESHOLD as DEFAULT_CONFIDENCE,
+    CAR_CONFIDENCE_THRESHOLD as DEFAULT_CAR_CONFIDENCE,
+    FREE_CONFIDENCE_THRESHOLD as DEFAULT_FREE_CONFIDENCE,
+    GENERAL_CONFIDENCE_THRESHOLD as DEFAULT_GENERAL_CONFIDENCE,
+    FRAME_SKIP as DEFAULT_FRAME_SKIP,
+    DEVICE as DEFAULT_DEVICE,
+    IMAGE_SIZE as DEFAULT_IMAGE_SIZE,
+    MODEL_PATH as DEFAULT_MODEL_PATH
+)
 
 logger = logging.getLogger(__name__)
 
-if CONFIG_AVAILABLE:
-    logger.info("Loaded config from utils.configs")
-else:
-    logger.warning("Config not found, using default values")
+_MODEL_CACHE = {}
 
+def get_or_load_model(model_path: str, device: str = "cpu") -> YOLO:
+    cache_key = f"{model_path}_{device}"
+  
+    if cache_key in _MODEL_CACHE:
+        logger.info(f"Using cached model from {model_path}")
+        return _MODEL_CACHE[cache_key]
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found at: {model_path}")
+    
+    logger.info(f"Loading new model from {model_path}")
+    try:
+        model = YOLO(model_path)
+        _MODEL_CACHE[cache_key] = model
+        logger.info(f"Model loaded and cached successfully (key: {cache_key})")
+        return model
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        raise
+
+def clear_model_cache():
+    global _MODEL_CACHE
+    _MODEL_CACHE.clear()
+    logger.info("Model cache cleared")
 
 class ParkingDetector:
     def __init__(
         self,
-        polygons: List[Dict],  # ✅ Required - phải có
+        polygons: List[Dict], 
         model_path: str = DEFAULT_MODEL_PATH,
-        confidence_threshold: float = DEFAULT_CONFIDENCE,
+        confidence_threshold: float = DEFAULT_CONFIDENCE,  
+        car_confidence: Optional[float] = None,
+        free_confidence: Optional[float] = None,
+        general_confidence: Optional[float] = None,
         frame_skip: int = DEFAULT_FRAME_SKIP,
         device: str = DEFAULT_DEVICE,
         image_size: int = DEFAULT_IMAGE_SIZE
     ):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found at: {model_path}")
-        if not polygons or len(polygons)==0:
+        if not polygons or len(polygons) == 0:
             raise ValueError("Polygons list cannot be empty")
-        if not 0<=confidence_threshold<=1:
-            raise ValueError(f"Confidence threshold must be between 0 and 1, got {confidence_threshold}")
         if not isinstance(frame_skip, int) or frame_skip < 0:
             raise ValueError(f"Frame skip must be non-negative integer, got {frame_skip}")
-        if not device in ["cuda", "cpu", "mps"]:
-            raise ValueError(f"Device must be 'cuda', 'cpu' or 'mps', got {device}")
+        if not device in ["cuda", "cpu"]:
+            raise ValueError(f"Device must be 'cuda' or 'cpu', got {device}")
         if not isinstance(image_size, int) or not (320 <= image_size <= 1920):
             raise ValueError(f"Image size must be integer between 320-1920 pixels, got {image_size}")
         
-        self.polygons =polygons
-        self.model_path=model_path
-        self.confidence_threshold=confidence_threshold
-        self.frame_skip=frame_skip
-        self.device=device
-        self.image_size=image_size
         
-        logger.info(f"loading model from {model_path}")
-        try:
-            self.model=YOLO(model_path)
-            logger.info("Model loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            raise
+        self.car_confidence = car_confidence if car_confidence is not None else DEFAULT_CAR_CONFIDENCE
+        self.free_confidence = free_confidence if free_confidence is not None else DEFAULT_FREE_CONFIDENCE
+        self.general_confidence = general_confidence if general_confidence is not None else DEFAULT_GENERAL_CONFIDENCE
+        
+        
+        if not 0 <= self.car_confidence <= 1:
+            raise ValueError(f"Car confidence must be between 0 and 1, got {self.car_confidence}")
+        if not 0 <= self.free_confidence <= 1:
+            raise ValueError(f"Free confidence must be between 0 and 1, got {self.free_confidence}")
+        if not 0 <= self.general_confidence <= 1:
+            raise ValueError(f"General confidence must be between 0 and 1, got {self.general_confidence}")
+        
+        self.polygons = polygons
+        self.model_path = model_path
+        self.confidence_threshold = confidence_threshold  
+        self.frame_skip = frame_skip
+        self.device = device
+        self.image_size = image_size
+        
+        self.model = get_or_load_model(model_path, device)
         logger.info(
             f"ParkingDetector initialized:\n"
             f"  - {len(polygons)} parking spots\n"
-            f"  - Confidence: {confidence_threshold}\n"
+            f"  - Car confidence: {self.car_confidence}\n"
+            f"  - Free confidence: {self.free_confidence}\n"
+            f"  - General confidence: {self.general_confidence}\n"
             f"  - Device: {device}\n"
             f"  - Image size: {image_size}"
         )
-    def detect_vehicles(self,image:np.ndarray)->List[Dict]:
+    def detect_objects(self, image: np.ndarray) -> Dict[str, List[Dict]]:
+        
         if image is None:
             logger.error("Image is None")
-            return []
-        if not isinstance(image,np.ndarray):
+            return {'cars': [], 'free_spots': []}
+        if not isinstance(image, np.ndarray):
             logger.error(f"Image must be numpy array, got {type(image)}")
-            return []
-        if image.size==0:
-            logger.error("img is empty")
-            return []
+            return {'cars': [], 'free_spots': []}
+        if image.size == 0:
+            logger.error("Image is empty")
+            return {'cars': [], 'free_spots': []}
+        
         logger.debug(f"Running YOLO detection on image shape: {image.shape}")
         try:
-            results=self.model(
+            
+            results = self.model(
                 image,
                 verbose=False,
                 device=self.device,
                 imgsz=self.image_size,
-                conf=self.confidence_threshold,     
+                conf=self.general_confidence,  
+                iou=0.7,  
             )
         except Exception as e:
-            logger.error(f"failed to run Yolo:{e}")
-            return []
-        detections=[]
+            logger.error(f"Failed to run YOLO: {e}")
+            return {'cars': [], 'free_spots': []}
+        
+        cars = []
+        free_spots = []
+        filtered_count = {'car': 0, 'free': 0}
+        
         try:
             for result in results:
-                boxes=result.boxes
-                if boxes is None or len(boxes)==0:
+                boxes = result.boxes
+                if boxes is None or len(boxes) == 0:
                     continue
+                    
                 for box in boxes:
-                    x1,y1,x2,y2=box.xyxy[0].cpu().numpy()
-                    confidence=float(box.conf[0])
-                    class_id=int(box.cls[0])
-                    class_name=self.model.names.get(class_id, f"class_{class_id}")
-                    detections.append({
-                        'bbox':[float(x1),float(y1),float(x2),float(y2)],
-                        'confidence':confidence,
-                        'class_id':class_id,
-                        'class_name':class_name
-                    })
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    confidence = float(box.conf[0])
+                    class_id = int(box.cls[0])
+                    class_name = self.model.names.get(class_id, f"class_{class_id}")
+                    
+                    
+                    if class_name == 'car':
+                        if confidence < self.car_confidence:
+                            filtered_count['car'] += 1
+                            continue  
+                    elif class_name == 'free':
+                        if confidence < self.free_confidence:
+                            filtered_count['free'] += 1
+                            continue  
+                    else:
+                        
+                        continue
+                    
+                    detection = {
+                        'bbox': [float(x1), float(y1), float(x2), float(y2)],
+                        'center': [(float(x1) + float(x2)) / 2, (float(y1) + float(y2)) / 2],
+                        'confidence': confidence,
+                        'class_id': class_id,
+                        'class_name': class_name
+                    }
+                    
+                    
+                    if class_name == 'car':
+                        cars.append(detection)
+                    elif class_name == 'free':
+                        free_spots.append(detection)
+                        
         except Exception as e:
-            logger.error(f"failed to process detections: {e}")
-            return []
-        logger.debug(f"Found {len(detections)} vehicles")
-        return detections
+            logger.error(f"Failed to process detections: {e}")
+            return {'cars': [], 'free_spots': []}
+        
+        logger.debug(
+            f"Found {len(cars)} cars and {len(free_spots)} free spots "
+            f"(filtered: {filtered_count['car']} cars, {filtered_count['free']} free spots)"
+        )
+        return {'cars': cars, 'free_spots': free_spots}
     def point_in_polygon(
         self,
         point: Tuple[float,float],
@@ -129,53 +188,107 @@ class ParkingDetector:
         result = cv2.pointPolygonTest(polygon,point,False)
         return result>=0
 
-    def check_polygon_occupancy(self,detections:List[Dict],polygon:Dict)->bool:
-        polygon_points=polygon['points']
-
-        for detection in detections:
-            bbox=detection['bbox']
-            x1,y1,x2,y2=bbox
-            x_center=(x1 + x2)/2
-            y_center=(y1+y2)/2
-            if self.point_in_polygon((x_center,y_center),polygon_points):
+    def check_polygon_occupancy(self, detections: Dict[str, List[Dict]], polygon: Dict) -> Dict:
+       
+        polygon_points = polygon['points']
+        polygon_id = polygon.get('id', '?')
+        for car in detections['cars']:
+            x_center, y_center = car['center']
+            if self.point_in_polygon((x_center, y_center), polygon_points):
                 logger.debug(
-                    f"Polygon{polygon.get('id','?',)} occupied by"
-                f"{detection['class_name']}({detection['confidence']:.2f})"
+                    f"Polygon {polygon_id} occupied by car "
+                    f"(confidence: {car['confidence']:.2f})"
                 )
-                return True
-        return False
-    def detect(self,image:np.ndarray)->dict:
-
+                return {
+                    'is_occupied': True,
+                    'status': 'occupied',
+                    'detected_object': car,
+                    'detection_type': 'car'
+                }
+        for free_spot in detections['free_spots']:
+            x_center, y_center = free_spot['center']
+            if self.point_in_polygon((x_center, y_center), polygon_points):
+                logger.debug(
+                    f"Polygon {polygon_id} detected as free "
+                    f"(confidence: {free_spot['confidence']:.2f})"
+                )
+                return {
+                    'is_occupied': False,
+                    'status': 'free',
+                    'detected_object': free_spot,
+                    'detection_type': 'free'
+                }
+        logger.debug(f"Polygon {polygon_id}: no detection")
+        return {
+            'is_occupied': False,
+            'status': 'unknown',
+            'detected_object': None,
+            'detection_type': None
+        }
+    def detect(self, image: np.ndarray) -> dict:
         logger.info(f"Starting detection on image: {image.shape}")
-
-        detections=self.detect_vehicles(image)
-        logger.info(f"Detected {len(detections)} vehicles")
-
-        spots=[]
-        occupied_count=0
-
-        for polygon in self.polygons:
-            is_occupied=self.check_polygon_occupancy(detections,polygon)
-            spots.append({
-                'id':polygon.get('id',len(spots)+1),
-                'is_occupied':is_occupied,
-                'polygon':polygon['points']
-            })
-            if is_occupied:
-                occupied_count+=1
-        total_spots=len(self.polygons)
-        vacant_count=total_spots-occupied_count
-        occupancy_rate=(occupied_count/total_spots)*100 if total_spots>0 else 0
-
+ 
+        detections = self.detect_objects(image)
         logger.info(
-            f"Detection completed:{occupied_count}/{total_spots} occupied"
-            f"({occupancy_rate:.1f}%)"
+            f"Detected {len(detections['cars'])} cars and "
+            f"{len(detections['free_spots'])} free spots"
         )
-        return{
-            'spots':spots,
-            'occupied-count':occupied_count,
-            'vacant-count':vacant_count,
-            'occupancy-rate':occupancy_rate
+        
+        spots = []
+        occupied_count = 0
+        free_count = 0
+        unknown_count = 0
+        
+        for polygon in self.polygons:
+            occupancy_info = self.check_polygon_occupancy(detections, polygon)
+            
+            spot_data = {
+                'id': polygon.get('id', len(spots) + 1),
+                'polygon': polygon['points'],
+                'is_occupied': occupancy_info['is_occupied'],
+                'status': occupancy_info['status'],
+                'detection_type': occupancy_info['detection_type']
+            }
+   
+            if occupancy_info['detected_object']:
+                spot_data['detected_object'] = {
+                    'bbox': occupancy_info['detected_object']['bbox'],
+                    'confidence': occupancy_info['detected_object']['confidence'],
+                    'class_name': occupancy_info['detected_object']['class_name']
+                }
+            
+            spots.append(spot_data)
+            if occupancy_info['status'] == 'occupied':
+                occupied_count += 1
+            elif occupancy_info['status'] == 'free':
+                free_count += 1
+            else:
+                unknown_count += 1
+        
+        total_spots = len(self.polygons)
+        vacant_count = free_count + unknown_count
+        occupancy_rate = (occupied_count / total_spots * 100) if total_spots > 0 else 0
+        
+        logger.info(
+            f"Detection completed: {occupied_count} occupied, "
+            f"{free_count} free, {unknown_count} unknown "
+            f"({occupancy_rate:.1f}% occupancy)"
+        )
+        
+        return {
+            'spots': spots,
+            'summary': {
+                'total_spots': total_spots,
+                'occupied_count': occupied_count,
+                'free_count': free_count,
+                'unknown_count': unknown_count,
+                'vacant_count': vacant_count,
+                'occupancy_rate': round(occupancy_rate, 2)
+            },
+            'detections': {
+                'cars': detections['cars'],
+                'free_spots': detections['free_spots']
+            }
         }
     def detect_video(self, video_path: str, skip_frames: int = None):
         if skip_frames is None:

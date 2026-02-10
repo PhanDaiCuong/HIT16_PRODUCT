@@ -19,7 +19,7 @@ st.title("HỆ THỐNG NHẬN DIỆN CHỖ ĐỖ XE")
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "models" / "best.pt"
-POLYGON_PATH = ROOT / "polygons.json"
+POLYGON_PATH = ROOT / "data" / "polygons.json"
 
 # ================= DRAW FUNCTION =================
 

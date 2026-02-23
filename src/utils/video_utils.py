@@ -1,45 +1,85 @@
+
+import logging
+from typing import Generator, Optional, Union
+
 import cv2
 import numpy as np
-from typing import Optional, Union
+
+from .draw_utils import annotate_frame
+
+logger = logging.getLogger(__name__)
+
+
 
 
 def open_video(source: Union[int, str]) -> cv2.VideoCapture:
-    """
-    Mở nguồn video từ file hoặc webcam.
+    """Mở nguồn video từ file path hoặc webcam index."""
+    cap = cv2.VideoCapture(source)
+    if not cap.isOpened():
+        cap.release()
+        raise ValueError(f"Không thể mở video: {source}")
+    return cap
 
-    Trả về:
-        Đối tượng cv2.VideoCapture đã được mở.
-    ValueError: Nếu không thể mở nguồn video.
-    """
-    capture = cv2.VideoCapture(source)
-    if not capture.isOpened():
-        capture.release()
-        raise ValueError(f"Unable to open video source: {source}")
-    return capture
 
-def read_frame(capture: cv2.VideoCapture) -> Optional[np.ndarray]:
-    """
-    Đọc một khung hình từ nguồn video.
-
-    Trả về:
-        Khung hình dưới dạng mảng NumPy, hoặc None nếu không đọc được.
-    """
-    if capture is None:
+def read_frame(cap: cv2.VideoCapture) -> Optional[np.ndarray]:
+    """Đọc 1 frame; trả None nếu hết video hoặc lỗi."""
+    if cap is None:
         return None
-
-    success, frame = capture.read()
-    if not success:
-        return None
-
-    return frame
+    ok, frame = cap.read()
+    return frame if ok else None
 
 
-def release_video(capture: Optional[cv2.VideoCapture]) -> None:
+def release_video(cap: Optional[cv2.VideoCapture]) -> None:
+    """Giải phóng VideoCapture an toàn."""
+    if cap is not None:
+        cap.release()
+
+
+
+
+def mjpeg_generator(
+    video_path: str,
+    detector,
+    skip: int = 2,
+    jpeg_quality: int = 85,
+) -> Generator[bytes, None, None]:
     """
-    Giải phóng tài nguyên video.
+    Generator yield các MJPEG chunk đã được annotate.
 
-    Tham số:
-        capture: Đối tượng cv2.VideoCapture cần giải phóng.
+    Args:
+        video_path:    Đường dẫn file video tạm.
+        detector:      ParkingDetector instance.
+        skip:          Bỏ qua N frame giữa mỗi lần detect (giảm tải CPU).
+        jpeg_quality:  Chất lượng JPEG encode (0-100).
+
+    Yields:
+        bytes: MJPEG multipart chunk (header + JPEG data).
     """
-    if capture is not None:
-        capture.release()
+    cap         = open_video(video_path)
+    frame_index = 0
+
+    try:
+        while cap.isOpened():
+            frame = read_frame(cap)
+            if frame is None:
+                break
+
+            frame_index += 1
+            if frame_index % (skip + 1) != 0:
+                continue
+
+            try:
+                result = detector.detect(frame)
+                frame  = annotate_frame(frame, result["spots"], result["summary"])
+            except Exception as exc:
+                logger.warning(f"[mjpeg_generator] Frame {frame_index} lỗi: {exc}")
+
+            _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + jpeg.tobytes()
+                + b"\r\n"
+            )
+    finally:
+        release_video(cap)

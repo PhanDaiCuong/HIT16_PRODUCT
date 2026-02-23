@@ -4,6 +4,10 @@ import torch
 # Đường dẫn đến model YOLOv8 đã được train để phát hiện xe và chỗ trống
 MODEL_PATH = "models/best.pt"
 
+# Đường dẫn đến file polygon định nghĩa các ô đỗ xe
+POLYGON_PATH = "data/polygons.json"
+
+
 # ========================== CÁC THAM SỐ CẤU HÌNH ==========================
 
 # Số frame bỏ qua trước khi xử lý video (giảm tải tính toán)

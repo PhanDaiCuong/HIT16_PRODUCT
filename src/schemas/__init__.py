@@ -7,6 +7,9 @@ from .parking_model import (
     DetectionResponse,
     PolygonConfig,
     DetectionConfig,
+    DetectRequest,
+    FrameDetectionResult,
+    VideoDetectionResponse,
 )
 
 __all__ = [
@@ -17,6 +20,10 @@ __all__ = [
     "DetectionResponse",
     "PolygonConfig",
     "DetectionConfig",
+    "DetectRequest",
+    "FrameDetectionResult",
+    "VideoDetectionResponse",
 ]
+
 
 

@@ -55,7 +55,7 @@ pip install -r requirements.txt
 1. **Khởi chạy Backend API**:
 
    ```bash
-   uvicorn main:app --reload
+   uvicorn src.main:app --reload
    ```
 
 2. **Khởi chạy Dashboard**:
@@ -70,13 +70,6 @@ pip install -r requirements.txt
 | GET         | `/health` | Kiểm tra trạng thái hệ thống và mô hình |
 | POST        | `/detect` | Xử lý hình ảnh để phát hiện chỗ đỗ      |
 | GET         | `/stream` | Luồng video MJPEG thời gian thực        |
-
-## 🧪 Kiểm Thử
-
-```bash
-# Chạy các bài kiểm tra (nếu có)
-pytest src/test/
-```
 
 ## 📦 Thư Viện Chính
 

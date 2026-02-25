@@ -1,4 +1,3 @@
-
 import base64
 from typing import List, Optional, Dict
 
@@ -6,8 +5,8 @@ import cv2
 import numpy as np
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field, validator
+
 class ImageDetectionRequest(BaseModel):
-   
     image: str = Field(..., description="Base64 encoded image string")
     
     class Config:
@@ -18,7 +17,6 @@ class ImageDetectionRequest(BaseModel):
         }
 
 class DetectedObject(BaseModel):
-    
     bbox: List[float] = Field(..., description="Bounding box [x1, y1, x2, y2]")
     confidence: float = Field(..., description="Detection confidence", ge=0.0, le=1.0)
     class_name: str = Field(..., description="'car' hoặc 'free'")
@@ -30,7 +28,6 @@ class DetectedObject(BaseModel):
         return v
 
 class ParkingSpot(BaseModel):
-    
     id: int = Field(..., description="ID của parking spot")
     is_occupied: bool = Field(..., description="Spot có xe hay không")
     status: str = Field(..., description="'occupied', 'free', hoặc 'unknown'")
@@ -58,8 +55,8 @@ class DetectionResponse(BaseModel):
     spots: List[ParkingSpot] = Field(..., description="Tất cả parking spots")
     summary: DetectionSummary = Field(..., description="Summary statistics")
     detections: Optional[Dict] = Field(None, description="Raw data (optional)")
+
 class PolygonConfig(BaseModel):
-   
     id: int
     points: List[List[float]]
 
@@ -73,13 +70,11 @@ class DetectionConfig(BaseModel):
 
 
 class DetectRequest(BaseModel):
-    """Request body gửi lên để phát hiện bãi đỗ xe từ ảnh."""
     image: str = Field(..., description="Base64 string (có hoặc không có data URI prefix)")
     polygon_id: Optional[str] = Field(default=None, description="Tên file polygon (không kèm .json)")
     config: Optional[DetectionConfig] = Field(default=None, description="Cấu hình confidence (tuỳ chọn)")
 
     def to_numpy(self) -> np.ndarray:
-        """Decode base64 image → numpy BGR array. Raise HTTPException nếu lỗi."""
         b64 = self.image.split(",", 1)[-1] if "," in self.image else self.image
         try:
             image_bytes = base64.b64decode(b64)
@@ -98,11 +93,7 @@ class DetectRequest(BaseModel):
         return img
 
 
-
-# ========================== VIDEO SCHEMAS ==========================
-
 class FrameDetectionResult(BaseModel):
-    """Kết quả phát hiện cho một frame trong video."""
     frame_number: int = Field(..., description="Số thứ tự frame (0-indexed)")
     summary: DetectionSummary = Field(..., description="Thống kê parking spots trong frame này")
     spots: List[ParkingSpot] = Field(default_factory=list, description="Trạng thái từng ô trong frame")
@@ -113,7 +104,6 @@ class FrameDetectionResult(BaseModel):
 
 
 class VideoDetectionResponse(BaseModel):
-    """Kết quả tổng hợp sau khi xử lý toàn bộ video."""
     total_frames_processed: int = Field(..., description="Số frame đã được detect")
     total_frames_read: int = Field(..., description="Tổng số frame đã đọc (gồm cả frame bỏ qua)")
     frames: List[FrameDetectionResult] = Field(..., description="Kết quả từng frame")

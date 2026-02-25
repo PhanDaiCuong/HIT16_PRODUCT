@@ -5,7 +5,6 @@ import numpy as np
 import cv2
 from ultralytics import YOLO
 
-
 from ..utils.configs import (
     CONFIDENCE_THRESHOLD as DEFAULT_CONFIDENCE,
     CAR_CONFIDENCE_THRESHOLD as DEFAULT_CAR_CONFIDENCE,
@@ -70,11 +69,9 @@ class ParkingDetector:
         if not isinstance(image_size, int) or not (320 <= image_size <= 1920):
             raise ValueError(f"Image size must be integer between 320-1920 pixels, got {image_size}")
         
-        
         self.car_confidence = car_confidence if car_confidence is not None else DEFAULT_CAR_CONFIDENCE
         self.free_confidence = free_confidence if free_confidence is not None else DEFAULT_FREE_CONFIDENCE
         self.general_confidence = general_confidence if general_confidence is not None else DEFAULT_GENERAL_CONFIDENCE
-        
         
         if not 0 <= self.car_confidence <= 1:
             raise ValueError(f"Car confidence must be between 0 and 1, got {self.car_confidence}")
@@ -92,7 +89,6 @@ class ParkingDetector:
         
         self.model = get_or_load_model(model_path, device)
         
-        # --- AUTO-SCALING ---
         self.original_polygons = [p.copy() for p in polygons]
         self.design_resolution = self._estimate_design_resolution()
         self.current_polygons = self.original_polygons
@@ -110,10 +106,6 @@ class ParkingDetector:
         )
 
     def _estimate_design_resolution(self) -> Tuple[int, int]:
-        """
-        Ước lượng độ phân giải gốc mà các polygon này được vẽ bên trên.
-        Hệ thống sẽ chọn độ phân giải tiêu chuẩn NHỎ NHẤT mà vẫn chứa được hết các điểm.
-        """
         max_x = 0
         max_y = 0
         for poly in self.original_polygons:
@@ -121,31 +113,21 @@ class ParkingDetector:
                 max_x = max(max_x, p[0])
                 max_y = max(max_y, p[1])
         
-        # Danh sách các độ phân giải phổ biến (W, H)
         standards = [
-            (640, 360),   # nHD
-            (640, 480),   # VGA
-            (800, 600),   # SVGA
-            (1024, 768),  # XGA
-            (1280, 720),  # HD
-            (1920, 1080), # FHD
-            (2560, 1440), # 2K
-            (3840, 2160)  # 4K
+            (640, 360), (640, 480), (800, 600), (1024, 768),
+            (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)
         ]
 
         for w, h in standards:
             if max_x <= w and max_y <= h:
                 return (w, h)
         
-        # Nếu vượt quá các chuẩn trên, lấy max + margin
         return (int(max_x + 20), int(max_y + 20))
 
     def _rescale_polygons(self, new_resolution: Tuple[int, int]):
-        """Căng chỉnh lại tọa độ polygon để khớp với độ phân giải mới."""
         if new_resolution == self.current_resolution:
             return
         
-        # Tránh chia cho 0
         base_w = max(1, self.design_resolution[0])
         base_h = max(1, self.design_resolution[1])
         
@@ -157,15 +139,14 @@ class ParkingDetector:
         new_polygons = []
         for poly in self.original_polygons:
             new_poly = poly.copy()
-            # Quan trọng: tạo list mới để không ghi đè vào original_polygons
             new_poly['points'] = [[p[0] * scale_x, p[1] * scale_y] for p in poly['points']]
             new_polygons.append(new_poly)
             
         self.current_polygons = new_polygons
         self.current_resolution = new_resolution
         self.polygons = new_polygons
+
     def detect_objects(self, image: np.ndarray) -> Dict[str, List[Dict]]:
-        
         if image is None:
             logger.error("Image is None")
             return {'cars': [], 'free_spots': []}
@@ -178,7 +159,6 @@ class ParkingDetector:
         
         logger.debug(f"Running YOLO detection on image shape: {image.shape}")
         try:
-            
             results = self.model(
                 image,
                 verbose=False,
@@ -207,7 +187,6 @@ class ParkingDetector:
                     class_id = int(box.cls[0])
                     class_name = self.model.names.get(class_id, f"class_{class_id}")
                     
-                    
                     if class_name == 'car':
                         if confidence < self.car_confidence:
                             filtered_count['car'] += 1
@@ -217,7 +196,6 @@ class ParkingDetector:
                             filtered_count['free'] += 1
                             continue  
                     else:
-                        
                         continue
                     
                     detection = {
@@ -227,7 +205,6 @@ class ParkingDetector:
                         'class_id': class_id,
                         'class_name': class_name
                     }
-                    
                     
                     if class_name == 'car':
                         cars.append(detection)
@@ -243,6 +220,7 @@ class ParkingDetector:
             f"(filtered: {filtered_count['car']} cars, {filtered_count['free']} free spots)"
         )
         return {'cars': cars, 'free_spots': free_spots}
+
     def point_in_polygon(
         self,
         point: Tuple[float,float],
@@ -253,7 +231,6 @@ class ParkingDetector:
         return result>=0
 
     def check_polygon_occupancy(self, detections: Dict[str, List[Dict]], polygon: Dict) -> Dict:
-       
         polygon_points = polygon['points']
         polygon_id = polygon.get('id', '?')
         for car in detections['cars']:
@@ -289,6 +266,7 @@ class ParkingDetector:
             'detected_object': None,
             'detection_type': None
         }
+
     def detect(self, image: np.ndarray) -> dict:
         if image is None:
             return {'spots': [], 'summary': {}}
@@ -360,6 +338,7 @@ class ParkingDetector:
                 'free_spots': detections['free_spots']
             }
         }
+
     def detect_video(self, video_path: str, skip_frames: int = None):
         if skip_frames is None:
             skip_frames = self.frame_skip

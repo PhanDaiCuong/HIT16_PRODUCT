@@ -1,23 +1,13 @@
-"""
-draw_utils.py
-Các hàm vẽ annotation lên frame ảnh / video.
-"""
 import cv2
 import numpy as np
 
-# ── Bảng màu BGR theo trạng thái ──
 SPOT_COLORS: dict = {
-    "occupied": (40,  40, 220),   # đỏ
-    "free":     (50, 205,  70),   # xanh lá
-    "unknown":  (20, 190, 230),   # cyan
+    "occupied": (40,  40, 220),   
+    "free":     (50, 205,  70),   
+    "unknown":  (20, 190, 230),   
 }
 
-
 def draw_spot_fills(frame: np.ndarray, spots: list, alpha: float = 0.22) -> None:
-    """
-    Vẽ semi-transparent fill cho tất cả spots (1 lần addWeighted).
-    Thao tác in-place lên frame.
-    """
     overlay = frame.copy()
     for spot in spots:
         polygon = np.array(spot["polygon"], np.int32)
@@ -25,14 +15,8 @@ def draw_spot_fills(frame: np.ndarray, spots: list, alpha: float = 0.22) -> None
         cv2.fillPoly(overlay, [polygon], color)
     cv2.addWeighted(overlay, alpha, frame, 1.0 - alpha, 0, frame)
 
-
 def draw_spot_borders_and_badges(frame: np.ndarray, spots: list) -> None:
-    """
-    Vẽ viền polygon anti-aliased + badge #ID căn giữa mỗi ô.
-    Kích thước font và viền tự động scale theo chiều rộng frame.
-    """
     h, w = frame.shape[:2]
-    # Hệ số scale dựa trên độ phân giải chuẩn 1280px
     s_factor = w / 1280.0
     
     font = cv2.FONT_HERSHEY_DUPLEX
@@ -45,10 +29,8 @@ def draw_spot_borders_and_badges(frame: np.ndarray, spots: list) -> None:
         polygon = np.array(spot["polygon"], np.int32)
         color   = SPOT_COLORS.get(spot["status"], (120, 120, 120))
 
-        # Viền
         cv2.polylines(frame, [polygon], True, color, line_thick, cv2.LINE_AA)
 
-        # Tâm polygon → đặt badge
         cx = int(np.mean(polygon[:, 0]))
         cy = int(np.mean(polygon[:, 1]))
 
@@ -58,25 +40,17 @@ def draw_spot_borders_and_badges(frame: np.ndarray, spots: list) -> None:
         bx1, by1 = cx - tw // 2 - pad, cy - th - pad
         bx2, by2 = cx + tw // 2 + pad, cy + pad
 
-        # Background tối + viền màu
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), (12, 12, 20), -1)
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, 1, cv2.LINE_AA)
 
-        # Chữ trắng
         cv2.putText(frame, label, (cx - tw // 2, cy - 2),
                     font, scale, (240, 240, 240), thick, cv2.LINE_AA)
 
-
 def draw_hud_bar(frame: np.ndarray, summary: dict) -> None:
-    """
-    Vẽ HUD bar bán trong suốt phía trên frame với thống kê trực tiếp.
-    Chiều cao HUD và font size tự động scale theo frame.
-    """
     h, w = frame.shape[:2]
     s_factor = w / 1280.0
     hud_h = int(46 * s_factor) if w > 640 else 32
     
-    # Nền HUD
     hud = frame.copy()
     cv2.rectangle(hud, (0, 0), (w, hud_h), (10, 12, 22), -1)
     cv2.addWeighted(hud, 0.82, frame, 0.18, 0, frame)
@@ -93,7 +67,6 @@ def draw_hud_bar(frame: np.ndarray, summary: dict) -> None:
     f_thick = 1
     y_pos = int(hud_h * 0.65)
 
-    # Logo
     logo_text = "PARKVISION AI"
     cv2.putText(frame, logo_text, (12, y_pos), font, f_scale * 1.2, (99, 179, 237), f_thick, cv2.LINE_AA)
     
@@ -101,7 +74,6 @@ def draw_hud_bar(frame: np.ndarray, summary: dict) -> None:
     sep_x = 12 + lw[0] + 15
     cv2.line(frame, (sep_x, int(hud_h*0.2)), (sep_x, int(hud_h*0.8)), (50, 90, 140), 1)
 
-    # Các chỉ số
     items = [
         (f"TOTAL {total}",       (180, 180, 180)),
         (f"OCCUPIED {occupied}", ( 80,  80, 220)),
@@ -118,19 +90,7 @@ def draw_hud_bar(frame: np.ndarray, summary: dict) -> None:
         if x < w - 20:
             cv2.line(frame, (x - 10, int(hud_h*0.3)), (x - 10, int(hud_h*0.7)), (40, 60, 90), 1)
 
-
 def annotate_frame(frame: np.ndarray, spots: list, summary: dict) -> np.ndarray:
-    """
-    Hàm tổng hợp: vẽ đầy đủ fill + viền + badge + HUD bar lên 1 frame.
-
-    Args:
-        frame:   Ảnh BGR (numpy array).
-        spots:   Danh sách spot dict (polygon, id, status).
-        summary: Dict thống kê (occupied_count, free_count, ...).
-
-    Returns:
-        Frame đã annotate (trả lại cùng object, thao tác in-place).
-    """
     draw_spot_fills(frame, spots)
     draw_spot_borders_and_badges(frame, spots)
     draw_hud_bar(frame, summary)

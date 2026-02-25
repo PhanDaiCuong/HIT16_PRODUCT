@@ -5,9 +5,6 @@ import streamlit as st
 import base64
 import streamlit.components.v1 as components
 
-# =====================================================================
-# CẤU HÌNH HỆ THỐNG
-# =====================================================================
 API_BASE = "http://localhost:8000/api/v1/parking"
 
 st.set_page_config(
@@ -15,17 +12,14 @@ st.set_page_config(
     page_icon="🅿️",
     layout="wide"
 )
-# --- CSS ---
+
 st.markdown("""
 <style>
-    /* Nhúng font chữ Inter */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stApp p, .stApp span, .stApp label, .stApp input, .stApp div[data-baseweb="select"] {
         font-size: 1.2rem !important; 
     }
-
-    /* Nền */
     .stApp { 
         background: linear-gradient(135deg, #0a0e1a 0%, #0d1528 50%, #0a1020 100%); 
         color: #e2e8f0; 
@@ -34,8 +28,6 @@ st.markdown("""
         background: linear-gradient(180deg, #0f1923 0%, #0a1420 100%);
         border-right: 1px solid rgba(99,179,237,0.15); 
     }
-            
-    /* Màu chữ đồng bộ chung */
     h1, h2, h3, h4, h5, h6, p, label, span { 
         color: #e2e8f0 !important; 
     } 
@@ -46,8 +38,6 @@ st.markdown("""
         color: #90cdf4 !important; 
         font-weight: 600 !important; 
     }
-            
-    /* BOX TIÊU ĐỀ CHÍNH */
     .hero-box {
         background: rgba(15, 23, 42, 0.4);
         border: 1px solid rgba(255, 255, 255, 0.05);
@@ -97,23 +87,17 @@ st.markdown("""
         font-weight: 400;
         margin: 0;
     }
-            
-    /* SIDEBAR */
     [data-testid="stSidebar"] .stTextInput,
     [data-testid="stSidebar"] .stSlider,
     [data-testid="stSidebar"] .stSelectbox {
         margin-bottom: 3rem !important; 
     }
-
-    /* ── KHU VỰC KÉO THẢ FILE ── */
     [data-testid="stFileUploader"] { 
         border: 2px dashed rgba(99,179,237,0.3) !important; 
         background: rgba(99,179,237,0.05) !important;
         border-radius: 12px !important; 
         padding: 2rem !important;
     }
-            
-    /* Chữ bên trong vùng thả file */
     div[data-testid="stFileUploader"] div,
     div[data-testid="stFileUploader"] span,
     div[data-testid="stFileUploader"] small,
@@ -121,8 +105,6 @@ st.markdown("""
         color: #94a3b8 !important;
         font-weight: 500 !important;
     }
-
-    /* Nút bấm */
     .stButton > button {
         background: linear-gradient(135deg, #f8fafc, #e2e8f0) !important;
         border: 1px solid #cbd5e0 !important;
@@ -136,19 +118,13 @@ st.markdown("""
         background: linear-gradient(135deg, #e2e8f0, #cbd5e0) !important;
         border-color: #94a3b8 !important;
     }
-
-    /* Đổi màu thanh trượt (Slider) */
     [data-testid="stSlider"] > div > div > div { background: #3182ce !important; }
-    
-    /* Ô Selectbox */
     .stSelectbox select { 
         background: rgba(255,255,255,0.05) !important; 
         border: 1px solid rgba(99,179,237,0.2) !important; 
         color: white !important; 
         border-radius: 8px !important;
     }
-
-    /* Ô nhập văn bản TextInput */
     .stTextInput input {
         background-color: #ffffff !important;
         color: #0f172a !important;
@@ -157,12 +133,8 @@ st.markdown("""
         border-radius: 8px !important;
         box-shadow: inset 0 1px 3px rgba(0,0,0,0.1) !important;
     }
-
-    /* Ẩn menu */
     #MainMenu, footer, header { visibility: hidden; }
     hr { border-color: rgba(255,255,255,0.07) !important; }
-            
-    /* ── KHU VỰC CHI TIẾT Ô ĐỖ XE ── */
     .spot-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -187,16 +159,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# =====================================================================
-# HELPER FUNCTIONS
-# =====================================================================
 def numpy_to_base64(image_np: np.ndarray) -> str:
-    """Chuyển đổi ảnh Numpy Array sang Base64 để gửi qua API"""
     _, buffer = cv2.imencode('.jpg', image_np)
     return base64.b64encode(buffer).decode('utf-8')
 
 def call_image_api(image_b64: str, conf_params: dict, polygon_id: str = None) -> dict:
-    """Gọi API phát hiện chỗ đỗ xe từ ảnh"""
     payload = {
         "image": image_b64,
         "config": conf_params,
@@ -207,49 +174,33 @@ def call_image_api(image_b64: str, conf_params: dict, polygon_id: str = None) ->
     return r.json()
 
 def draw_spots(frame: np.ndarray, spots: list) -> np.ndarray:
-    """Vẽ các đa giác và trạng thái lên ảnh, tự động scale kích thước font/viền"""
     h, w = frame.shape[:2]
     s_factor = w / 1280.0
-    
-    # Mã màu: BGR
     COLORS = {
-        "occupied": (40, 40, 220),  # Đỏ
-        "free": (50, 205, 70),      # Xanh lá
-        "unknown": (20, 190, 230),  # Vàng/Cam
+        "occupied": (40, 40, 220),
+        "free": (50, 205, 70),
+        "unknown": (20, 190, 230),
     }
-    
-    # Tạo overlay để làm hiệu ứng trong suốt (transparent)
     overlay = frame.copy()
     for spot in spots:
         polygon = np.array(spot["polygon"], np.int32)
         color = COLORS.get(spot["status"], (120, 120, 120))
         cv2.fillPoly(overlay, [polygon], color)
-    
-    # Trộn ảnh overlay với ảnh gốc
     cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
-
-    # Vẽ viền và ID
     line_thick = max(1, int(2 * s_factor))
     f_scale = max(0.3, 0.5 * s_factor)
     f_thick = max(1, int(2 * s_factor))
-
     for spot in spots:
         polygon = np.array(spot["polygon"], np.int32)
         color = COLORS.get(spot["status"], (120, 120, 120))
         cv2.polylines(frame, [polygon], isClosed=True, color=color, thickness=line_thick)
-
-        # Tính toán điểm chính giữa để ghi chữ
         cx = int(np.mean(polygon[:, 0]))
         cy = int(np.mean(polygon[:, 1]))
         label = f"#{spot['id']}"
-        
         cv2.putText(frame, label, (cx - int(15 * s_factor), cy + int(5 * s_factor)), 
                     cv2.FONT_HERSHEY_SIMPLEX, f_scale, (255, 255, 255), f_thick)
     return frame
 
-# =====================================================================
-# GIAO DIỆN CHÍNH (UI)
-# =====================================================================
 st.markdown("""
     <div class="hero-box">
         <div class="hero-badge">⚡ AI-POWERED • REAL-TIME DETECTION</div>
@@ -261,30 +212,22 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("Cấu hình hệ thống")
     api_url = st.text_input("API Base URL", value=API_BASE)
-    
     st.subheader("📍 Khu vực đỗ xe")
     try:
         poly_list = requests.get(f"{API_BASE}/polygons").json()
         selected_poly = st.selectbox("Chọn bãi đỗ", poly_list if isinstance(poly_list, list) else ["default"])
     except:
         selected_poly = st.selectbox("Chọn bãi đỗ", ["default"])
-    
-    # Hiển thị thông tin hỗ trợ căn chỉnh
     st.caption("ℹ️ Hệ thống tự động co giãn Polygon để khớp với video.")
-
     st.subheader("Ngưỡng tin cậy ")
     car_conf = st.slider("🚗 Phát hiện Xe ", 0.0, 1.0, 0.40, 0.05)
     free_conf = st.slider("🟢 Phát hiện Chỗ trống", 0.0, 1.0, 0.25, 0.05)
-    
     st.subheader("⚙️ Phần cứng")
     device = st.selectbox("💻 Device", ["cpu", "cuda"])
     skip_frames = st.slider("⏭️ Bỏ qua N frame (Video)", 0, 15, 3)
-    
-    # Nút kiểm tra trạng thái API
     if st.button("Kiểm tra kết nối API"):
         try:
             r = requests.get(f"{api_url}/health", timeout=3)
@@ -295,7 +238,6 @@ with st.sidebar:
         except:
             st.error("❌ Không thể kết nối đến Server.")
 
-# Tổng hợp config để truyền đi
 current_config = {
     "car_confidence": car_conf,
     "free_confidence": free_conf,
@@ -304,38 +246,24 @@ current_config = {
     "image_size": 640
 }
 
-# --- TÙY CHỌN CHẾ ĐỘ ---
 mode = st.radio("Chọn nguồn cấp dữ liệu:", ["Phát hiện từ Ảnh", "Phát hiện từ Video"], horizontal=True)
 st.divider()
 
-# =====================================================================
-# CHẾ ĐỘ 1: XỬ LÝ ẢNH
-# =====================================================================
 if mode == "Phát hiện từ Ảnh":
     uploaded_file = st.file_uploader("📂 Tải ảnh lên (JPG / PNG)", type=["jpg", "jpeg", "png"])
-
     if uploaded_file:
-        # Đọc ảnh thành numpy array
         image_bytes = uploaded_file.getvalue()
         image_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
-        
-        # Gọi API
         with st.spinner("🔍 Đang phân tích ảnh qua AI Server..."):
             try:
                 image_b64 = numpy_to_base64(image_np)
                 result = call_image_api(image_b64, current_config, selected_poly)
-                
-                # Vẽ box lên ảnh
                 annotated_img = draw_spots(image_np.copy(), result["spots"])
-                
-                # Hiển thị 2 ảnh cạnh nhau
                 col1, col2 = st.columns(2)
                 with col1:
                     st.image(image_np, channels="BGR", caption="Ảnh gốc")
                 with col2:
                     st.image(annotated_img, channels="BGR", caption="Ảnh kết quả AI")
-
-                # Hiển thị thống kê bằng components có sẵn của Streamlit
                 st.subheader("📊 Thống kê bãi đỗ")
                 s = result["summary"]
                 m1, m2, m3, m4 = st.columns(4)
@@ -343,66 +271,44 @@ if mode == "Phát hiện từ Ảnh":
                 m2.metric("Có xe 🔴", s['occupied_count'])
                 m3.metric("Chỗ trống 🟢", s['free_count'])
                 m4.metric("Tỷ lệ lấp đầy", f"{s['occupancy_rate']:.0f}%")
-
-                # Bảng chi tiết từng ô đỗ xe
-                # Bảng chi tiết từng ô đỗ xe
                 with st.expander("📋 Chi tiết từng ô đỗ xe", expanded=True):
                     items_html = ""
                     for spot in result["spots"]:
                         status = spot["status"]
-                        # Xác định Icon
                         icon = "🔴" if status == "occupied" else "🟢" if status == "free" else "🟡"
-                        
-                        # Lấy độ tin cậy (nếu có)
                         conf = ""
                         if spot.get("detected_object"):
                             conf = f' <span style="font-size: 0.75rem; opacity: 0.7;">— {spot["detected_object"]["confidence"]:.0%}</span>'
-                        
-                        # Nối chuỗi HTML cực ngắn dùng class CSS
                         items_html += f'<div class="spot-item {status}">{icon} <span>Ô #{spot["id"]}{conf}</span></div>'
-
-                    # In toàn bộ lưới ra màn hình
                     st.markdown(f'<div class="spot-grid">{items_html}</div>', unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"❌ Lỗi xử lý API: {e}")
 
-# =====================================================================
-# CHẾ ĐỘ 2: XỬ LÝ VIDEO
-# =====================================================================
 elif mode == "Phát hiện từ Video":
     uploaded_video = st.file_uploader("📂 Tải video lên (MP4 / AVI / WEBM)", type=["mp4", "avi", "webm"])
-
     if uploaded_video:
         if st.button("▶️ Bắt đầu phân tích Video"):
             with st.spinner("📤 Đang gửi video lên server..."):
                 try:
-                    # Gửi file video
                     files = {"video": (uploaded_video.name, uploaded_video.getvalue(), "video/mp4")}
                     data = {"polygon_id": selected_poly}
                     r = requests.post(f"{API_BASE}/session/upload", files=files, data=data)
                     r.raise_for_status()
-                    
                     sid = r.json()["session_id"]
                     st.session_state["stream_sid"] = sid
                     st.success("✅ Upload thành công!")
                 except Exception as e:
                     st.error(f"❌ Lỗi tải video lên Server: {e}")
 
-    # Nếu có session id đang chạy thì hiển thị luồng stream
     if "stream_sid" in st.session_state:
         sid = st.session_state["stream_sid"]
         st.subheader("🎞️ Live Stream - AI Detection")
-        
-        # URL stream MJPEG từ API Server
         stream_url = f"{API_BASE}/session/{sid}/stream?car_confidence={car_conf}&free_confidence={free_conf}&skip_frames={skip_frames}"
-        
-        # Sử dụng thẻ img HTML cơ bản với CSS để tự co giãn theo khung hình
         st.markdown(f"""
             <div style="width: 100%; position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border: 2px solid rgba(99,179,237,0.3); border-radius: 12px;">
                 <img src="{stream_url}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; background: #000;">
             </div>
         """, unsafe_allow_html=True)
-
         if st.button("🛑 Dừng Video & Xoá Session"):
             del st.session_state["stream_sid"]
             st.rerun()

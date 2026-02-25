@@ -8,21 +8,14 @@ from src.domain.parking_detector import get_or_load_model
 from src.routers import parking_router
 from src.utils.configs import DEVICE, MODEL_PATH
 
-# ========================== LOGGING ==========================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-
-# ========================== LIFESPAN ==========================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Pre-load YOLO model một lần duy nhất khi server khởi động.
-    Model được lưu vào app.state.model để các router dùng lại.
-    """
     logger.info(f"[Startup] Đang load model từ '{MODEL_PATH}' trên device '{DEVICE}'...")
     try:
         model = get_or_load_model(MODEL_PATH, DEVICE)
@@ -39,13 +32,10 @@ async def lifespan(app: FastAPI):
         app.state.model_path = MODEL_PATH
         app.state.device = DEVICE
 
-    yield  # Server đang chạy
+    yield
 
-    # Shutdown: giải phóng tài nguyên nếu cần
     logger.info("[Shutdown] Server đang tắt.")
 
-
-# ========================== APP ==========================
 app = FastAPI(
     title="Parking Detection API",
     description=(
@@ -58,7 +48,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ========================== CORS ==========================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -67,11 +56,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ========================== ROUTERS ==========================
 app.include_router(parking_router, prefix="/api/v1")
 
-
-# ========================== ROOT ==========================
 @app.get("/", tags=["Root"])
 async def root():
     model_status = "ready" if getattr(app.state, "model", None) is not None else "not loaded"

@@ -1,11 +1,3 @@
-"""
-parking_detect.py
-FastAPI router cho parking detection API.
-Logic thực thi được đặt trong các utils module:
-  - utils.polygon_utils → load_polygons()
-  - utils.draw_utils    → annotate_frame()
-  - utils.video_utils   → mjpeg_generator()
-"""
 import logging
 import os
 import tempfile
@@ -25,14 +17,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/parking", tags=["Parking Detection"])
 
-# Session store: session_id → đường dẫn file video tạm
 _VIDEO_SESSIONS: Dict[str, str] = {}
 
-
-# ========================== PRIVATE HELPERS ==========================
-
 def _get_polygons(polygon_id: str = None) -> List[dict]:
-    """Wrapper load polygon, đổi exception thuần → HTTPException."""
     path = POLYGON_PATH
     if polygon_id:
         path = os.path.join(POLYGONS_DIR, f"{polygon_id}.json")
@@ -40,7 +27,6 @@ def _get_polygons(polygon_id: str = None) -> List[dict]:
     try:
         return load_polygons(path)
     except FileNotFoundError:
-        # Fallback to default if custom not found
         if polygon_id:
             logger.warning(f"Polygon {polygon_id} not found, falling back to default.")
             return load_polygons(POLYGON_PATH)
@@ -50,7 +36,6 @@ def _get_polygons(polygon_id: str = None) -> List[dict]:
 
 
 def _make_detector(request: Request, polygons: List[dict], cfg: DetectionConfig) -> ParkingDetector:
-    """Tạo ParkingDetector từ model đã pre-load trong app.state."""
     if getattr(request.app.state, "model", None) is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -71,7 +56,6 @@ def _make_detector(request: Request, polygons: List[dict], cfg: DetectionConfig)
 
 
 async def _save_upload_to_temp(video: UploadFile) -> str:
-    """Lưu UploadFile ra file tạm, trả về đường dẫn."""
     suffix = os.path.splitext(video.filename or "video.mp4")[1] or ".mp4"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
@@ -86,11 +70,8 @@ async def _save_upload_to_temp(video: UploadFile) -> str:
     return tmp.name
 
 
-# ========================== ENDPOINTS ==========================
-
 @router.post("/detect", response_model=DetectionResponse, summary="Phát hiện xe từ ảnh (base64)")
 async def detect_parking(body: DetectRequest, request: Request):
-    """Gửi ảnh base64 → nhận kết quả từng ô đỗ xe. Polygon tự load từ server."""
     detector = _make_detector(request, _get_polygons(body.polygon_id), body.config or DetectionConfig())
     try:
         result = detector.detect(body.to_numpy())
@@ -105,7 +86,6 @@ async def detect_parking(body: DetectRequest, request: Request):
 
 @router.get("/polygons", summary="Danh sách các file polygon có sẵn")
 async def list_polygons():
-    """Trả về danh sách các ID khu vực (tên file json trong data/polygons)."""
     if not os.path.exists(POLYGONS_DIR):
         return []
     files = [f.replace(".json", "") for f in os.listdir(POLYGONS_DIR) if f.endswith(".json")]
@@ -117,7 +97,6 @@ async def upload_video_session(
     video: UploadFile = File(...),
     polygon_id: str = Form(default=None)
 ):
-    """Upload video → trả session_id. Dùng session_id để gọi GET /session/{id}/stream."""
     session_id = str(uuid.uuid4())
     tmp_path   = await _save_upload_to_temp(video)
     _VIDEO_SESSIONS[session_id] = {
@@ -144,9 +123,8 @@ async def stream_session(
     car_confidence:     float = Query(default=0.40),
     free_confidence:    float = Query(default=0.25),
     general_confidence: float = Query(default=0.25),
-    skip_frames:        int   = Query(default=2, description="Bỏ qua N frame giữa mỗi lần detect"),
+    skip_frames:        int   = Query(default=2),
 ):
-    """Trỏ <img src="..."> tới URL này → browser render MJPEG annotated real-time."""
     if session_id not in _VIDEO_SESSIONS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Session không tồn tại hoặc đã hết hạn.")
@@ -190,13 +168,12 @@ async def stream_session(
 )
 async def stream_video_post(
     request: Request,
-    video:              UploadFile = File(...),
-    car_confidence:     float      = Form(default=0.40),
-    free_confidence:    float      = Form(default=0.25),
-    general_confidence: float      = Form(default=0.25),
-    skip_frames:        int        = Form(default=2),
+    video:               UploadFile = File(...),
+    car_confidence:      float      = Form(default=0.40),
+    free_confidence:     float      = Form(default=0.25),
+    general_confidence:  float      = Form(default=0.25),
+    skip_frames:         int        = Form(default=2),
 ):
-    """Dùng khi muốn upload + stream trong cùng 1 request (không cần session)."""
     cfg      = DetectionConfig(car_confidence=car_confidence,
                                free_confidence=free_confidence,
                                general_confidence=general_confidence)

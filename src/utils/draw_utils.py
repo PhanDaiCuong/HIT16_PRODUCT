@@ -29,17 +29,24 @@ def draw_spot_fills(frame: np.ndarray, spots: list, alpha: float = 0.22) -> None
 def draw_spot_borders_and_badges(frame: np.ndarray, spots: list) -> None:
     """
     Vẽ viền polygon anti-aliased + badge #ID căn giữa mỗi ô.
-    Thao tác in-place lên frame.
+    Kích thước font và viền tự động scale theo chiều rộng frame.
     """
-    font, scale, thick = cv2.FONT_HERSHEY_DUPLEX, 0.38, 1
-    pad = 4
+    h, w = frame.shape[:2]
+    # Hệ số scale dựa trên độ phân giải chuẩn 1280px
+    s_factor = w / 1280.0
+    
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = max(0.25, 0.38 * s_factor)
+    thick = max(1, int(1 * s_factor))
+    pad = max(2, int(4 * s_factor))
+    line_thick = max(1, int(2 * s_factor))
 
     for spot in spots:
         polygon = np.array(spot["polygon"], np.int32)
         color   = SPOT_COLORS.get(spot["status"], (120, 120, 120))
 
         # Viền
-        cv2.polylines(frame, [polygon], True, color, 2, cv2.LINE_AA)
+        cv2.polylines(frame, [polygon], True, color, line_thick, cv2.LINE_AA)
 
         # Tâm polygon → đặt badge
         cx = int(np.mean(polygon[:, 0]))
@@ -60,13 +67,15 @@ def draw_spot_borders_and_badges(frame: np.ndarray, spots: list) -> None:
                     font, scale, (240, 240, 240), thick, cv2.LINE_AA)
 
 
-def draw_hud_bar(frame: np.ndarray, summary: dict, hud_h: int = 46) -> None:
+def draw_hud_bar(frame: np.ndarray, summary: dict) -> None:
     """
     Vẽ HUD bar bán trong suốt phía trên frame với thống kê trực tiếp.
-    Thao tác in-place lên frame.
+    Chiều cao HUD và font size tự động scale theo frame.
     """
     h, w = frame.shape[:2]
-
+    s_factor = w / 1280.0
+    hud_h = int(46 * s_factor) if w > 640 else 32
+    
     # Nền HUD
     hud = frame.copy()
     cv2.rectangle(hud, (0, 0), (w, hud_h), (10, 12, 22), -1)
@@ -80,27 +89,34 @@ def draw_hud_bar(frame: np.ndarray, summary: dict, hud_h: int = 46) -> None:
     rate     = summary.get("occupancy_rate", 0.0)
 
     font = cv2.FONT_HERSHEY_SIMPLEX
+    f_scale = max(0.35, 0.45 * s_factor)
+    f_thick = 1
+    y_pos = int(hud_h * 0.65)
 
     # Logo
-    cv2.putText(frame, "PARKVISION AI",
-                (12, 30), font, 0.52, (99, 179, 237), 1, cv2.LINE_AA)
-    cv2.line(frame, (175, 10), (175, 38), (50, 90, 140), 1)
+    logo_text = "PARKVISION AI"
+    cv2.putText(frame, logo_text, (12, y_pos), font, f_scale * 1.2, (99, 179, 237), f_thick, cv2.LINE_AA)
+    
+    lw, _ = cv2.getTextSize(logo_text, font, f_scale * 1.2, f_thick)
+    sep_x = 12 + lw[0] + 15
+    cv2.line(frame, (sep_x, int(hud_h*0.2)), (sep_x, int(hud_h*0.8)), (50, 90, 140), 1)
 
     # Các chỉ số
     items = [
-        (f"TOTAL  {total}",       (180, 180, 180)),
-        (f"OCCUPIED  {occupied}", ( 80,  80, 220)),
-        (f"FREE  {free}",         ( 60, 205,  70)),
-        (f"UNKNOWN  {unknown}",   ( 30, 185, 225)),
-        (f"RATE  {rate:.0f}%",    (220, 185,  60)),
+        (f"TOTAL {total}",       (180, 180, 180)),
+        (f"OCCUPIED {occupied}", ( 80,  80, 220)),
+        (f"FREE {free}",         ( 60, 205,  70)),
+        (f"UNKNOWN {unknown}",   ( 30, 185, 225)),
+        (f"RATE {rate:.0f}%",    (220, 185,  60)),
     ]
-    x = 190
+    
+    x = sep_x + 15
     for text, color in items:
-        cv2.putText(frame, text, (x, 30), font, 0.42, color, 1, cv2.LINE_AA)
-        tw, _ = cv2.getTextSize(text, font, 0.42, 1)
-        x += tw[0] + 22
-        if x < w - 30:
-            cv2.line(frame, (x - 11, 14), (x - 11, 34), (40, 60, 90), 1)
+        cv2.putText(frame, text, (x, y_pos), font, f_scale, color, f_thick, cv2.LINE_AA)
+        tw, _ = cv2.getTextSize(text, font, f_scale, f_thick)
+        x += tw[0] + int(20 * s_factor)
+        if x < w - 20:
+            cv2.line(frame, (x - 10, int(hud_h*0.3)), (x - 10, int(hud_h*0.7)), (40, 60, 90), 1)
 
 
 def annotate_frame(frame: np.ndarray, spots: list, summary: dict) -> np.ndarray:

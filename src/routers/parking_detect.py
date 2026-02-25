@@ -17,7 +17,7 @@ from starlette.responses import StreamingResponse
 
 from ..domain.parking_detector import ParkingDetector
 from ..schemas.parking_model import DetectRequest, DetectionConfig, DetectionResponse
-from ..utils.configs import POLYGON_PATH
+from ..utils.configs import POLYGON_PATH, POLYGONS_DIR
 from ..utils.polygon_utils import load_polygons
 from ..utils.video_utils import mjpeg_generator
 
@@ -31,13 +31,21 @@ _VIDEO_SESSIONS: Dict[str, str] = {}
 
 # ========================== PRIVATE HELPERS ==========================
 
-def _get_polygons() -> List[dict]:
+def _get_polygons(polygon_id: str = None) -> List[dict]:
     """Wrapper load polygon, đổi exception thuần → HTTPException."""
+    path = POLYGON_PATH
+    if polygon_id:
+        path = os.path.join(POLYGONS_DIR, f"{polygon_id}.json")
+    
     try:
-        return load_polygons(POLYGON_PATH)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
-    except ValueError as exc:
+        return load_polygons(path)
+    except FileNotFoundError:
+        # Fallback to default if custom not found
+        if polygon_id:
+            logger.warning(f"Polygon {polygon_id} not found, falling back to default.")
+            return load_polygons(POLYGON_PATH)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Default polygon file not found.")
+    except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
@@ -83,7 +91,7 @@ async def _save_upload_to_temp(video: UploadFile) -> str:
 @router.post("/detect", response_model=DetectionResponse, summary="Phát hiện xe từ ảnh (base64)")
 async def detect_parking(body: DetectRequest, request: Request):
     """Gửi ảnh base64 → nhận kết quả từng ô đỗ xe. Polygon tự load từ server."""
-    detector = _make_detector(request, _get_polygons(), body.config or DetectionConfig())
+    detector = _make_detector(request, _get_polygons(body.polygon_id), body.config or DetectionConfig())
     try:
         result = detector.detect(body.to_numpy())
     except Exception as exc:
@@ -91,20 +99,36 @@ async def detect_parking(body: DetectRequest, request: Request):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
     s = result["summary"]
-    logger.info(f"detect: {s['occupied_count']} occupied, {s['free_count']} free")
+    logger.info(f"detect (area={body.polygon_id}): {s['occupied_count']} occupied, {s['free_count']} free")
     return result
 
 
+@router.get("/polygons", summary="Danh sách các file polygon có sẵn")
+async def list_polygons():
+    """Trả về danh sách các ID khu vực (tên file json trong data/polygons)."""
+    if not os.path.exists(POLYGONS_DIR):
+        return []
+    files = [f.replace(".json", "") for f in os.listdir(POLYGONS_DIR) if f.endswith(".json")]
+    return sorted(files)
+
+
 @router.post("/session/upload", summary="Upload video, nhận session_id để stream")
-async def upload_video_session(video: UploadFile = File(...)):
+async def upload_video_session(
+    video: UploadFile = File(...),
+    polygon_id: str = Form(default=None)
+):
     """Upload video → trả session_id. Dùng session_id để gọi GET /session/{id}/stream."""
     session_id = str(uuid.uuid4())
     tmp_path   = await _save_upload_to_temp(video)
-    _VIDEO_SESSIONS[session_id] = tmp_path
-    logger.info(f"Session {session_id}: {video.filename} → {tmp_path}")
+    _VIDEO_SESSIONS[session_id] = {
+        "path": tmp_path,
+        "polygon_id": polygon_id
+    }
+    logger.info(f"Session {session_id}: {video.filename} (area={polygon_id}) → {tmp_path}")
     return {
         "session_id": session_id,
         "filename":   video.filename,
+        "polygon_id": polygon_id,
         "stream_url": f"/api/v1/parking/session/{session_id}/stream",
     }
 
@@ -126,7 +150,11 @@ async def stream_session(
     if session_id not in _VIDEO_SESSIONS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Session không tồn tại hoặc đã hết hạn.")
-    video_path = _VIDEO_SESSIONS[session_id]
+    
+    session_data = _VIDEO_SESSIONS[session_id]
+    video_path = session_data["path"]
+    polygon_id = session_data["polygon_id"]
+
     if not os.path.exists(video_path):
         _VIDEO_SESSIONS.pop(session_id, None)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
@@ -135,7 +163,7 @@ async def stream_session(
     cfg      = DetectionConfig(car_confidence=car_confidence,
                                free_confidence=free_confidence,
                                general_confidence=general_confidence)
-    detector = _make_detector(request, _get_polygons(), cfg)
+    detector = _make_detector(request, _get_polygons(polygon_id), cfg)
 
     def _generator_with_cleanup():
         try:

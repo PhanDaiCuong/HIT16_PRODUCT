@@ -91,6 +91,13 @@ class ParkingDetector:
         self.image_size = image_size
         
         self.model = get_or_load_model(model_path, device)
+        
+        # --- AUTO-SCALING ---
+        self.original_polygons = [p.copy() for p in polygons]
+        self.design_resolution = self._estimate_design_resolution()
+        self.current_polygons = self.original_polygons
+        self.current_resolution = self.design_resolution
+
         logger.info(
             f"ParkingDetector initialized:\n"
             f"  - {len(polygons)} parking spots\n"
@@ -98,8 +105,65 @@ class ParkingDetector:
             f"  - Free confidence: {self.free_confidence}\n"
             f"  - General confidence: {self.general_confidence}\n"
             f"  - Device: {device}\n"
-            f"  - Image size: {image_size}"
+            f"  - Image size: {image_size}\n"
+            f"  - Estimated Design Resolution: {self.design_resolution}"
         )
+
+    def _estimate_design_resolution(self) -> Tuple[int, int]:
+        """
+        Ước lượng độ phân giải gốc mà các polygon này được vẽ bên trên.
+        Hệ thống sẽ chọn độ phân giải tiêu chuẩn NHỎ NHẤT mà vẫn chứa được hết các điểm.
+        """
+        max_x = 0
+        max_y = 0
+        for poly in self.original_polygons:
+            for p in poly['points']:
+                max_x = max(max_x, p[0])
+                max_y = max(max_y, p[1])
+        
+        # Danh sách các độ phân giải phổ biến (W, H)
+        standards = [
+            (640, 360),   # nHD
+            (640, 480),   # VGA
+            (800, 600),   # SVGA
+            (1024, 768),  # XGA
+            (1280, 720),  # HD
+            (1920, 1080), # FHD
+            (2560, 1440), # 2K
+            (3840, 2160)  # 4K
+        ]
+
+        for w, h in standards:
+            if max_x <= w and max_y <= h:
+                return (w, h)
+        
+        # Nếu vượt quá các chuẩn trên, lấy max + margin
+        return (int(max_x + 20), int(max_y + 20))
+
+    def _rescale_polygons(self, new_resolution: Tuple[int, int]):
+        """Căng chỉnh lại tọa độ polygon để khớp với độ phân giải mới."""
+        if new_resolution == self.current_resolution:
+            return
+        
+        # Tránh chia cho 0
+        base_w = max(1, self.design_resolution[0])
+        base_h = max(1, self.design_resolution[1])
+        
+        scale_x = new_resolution[0] / base_w
+        scale_y = new_resolution[1] / base_h
+        
+        logger.info(f"Auto-rescaling polygons: {self.design_resolution} -> {new_resolution} (Scale: {scale_x:.2f}x, {scale_y:.2f}x)")
+        
+        new_polygons = []
+        for poly in self.original_polygons:
+            new_poly = poly.copy()
+            # Quan trọng: tạo list mới để không ghi đè vào original_polygons
+            new_poly['points'] = [[p[0] * scale_x, p[1] * scale_y] for p in poly['points']]
+            new_polygons.append(new_poly)
+            
+        self.current_polygons = new_polygons
+        self.current_resolution = new_resolution
+        self.polygons = new_polygons
     def detect_objects(self, image: np.ndarray) -> Dict[str, List[Dict]]:
         
         if image is None:
@@ -226,6 +290,12 @@ class ParkingDetector:
             'detection_type': None
         }
     def detect(self, image: np.ndarray) -> dict:
+        if image is None:
+            return {'spots': [], 'summary': {}}
+            
+        h, w = image.shape[:2]
+        self._rescale_polygons((w, h))
+
         logger.info(f"Starting detection on image: {image.shape}")
  
         detections = self.detect_objects(image)

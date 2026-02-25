@@ -75,6 +75,7 @@ class DetectionConfig(BaseModel):
 class DetectRequest(BaseModel):
     """Request body gửi lên để phát hiện bãi đỗ xe từ ảnh."""
     image: str = Field(..., description="Base64 string (có hoặc không có data URI prefix)")
+    polygon_id: Optional[str] = Field(default=None, description="Tên file polygon (không kèm .json)")
     config: Optional[DetectionConfig] = Field(default=None, description="Cấu hình confidence (tuỳ chọn)")
 
     def to_numpy(self) -> np.ndarray:

@@ -195,18 +195,22 @@ def numpy_to_base64(image_np: np.ndarray) -> str:
     _, buffer = cv2.imencode('.jpg', image_np)
     return base64.b64encode(buffer).decode('utf-8')
 
-def call_image_api(image_b64: str, conf_params: dict) -> dict:
+def call_image_api(image_b64: str, conf_params: dict, polygon_id: str = None) -> dict:
     """Gọi API phát hiện chỗ đỗ xe từ ảnh"""
     payload = {
         "image": image_b64,
-        "config": conf_params
+        "config": conf_params,
+        "polygon_id": polygon_id
     }
     r = requests.post(f"{API_BASE}/detect", json=payload, timeout=60)
     r.raise_for_status()
     return r.json()
 
 def draw_spots(frame: np.ndarray, spots: list) -> np.ndarray:
-    """Vẽ các đa giác và trạng thái lên ảnh"""
+    """Vẽ các đa giác và trạng thái lên ảnh, tự động scale kích thước font/viền"""
+    h, w = frame.shape[:2]
+    s_factor = w / 1280.0
+    
     # Mã màu: BGR
     COLORS = {
         "occupied": (40, 40, 220),  # Đỏ
@@ -225,18 +229,22 @@ def draw_spots(frame: np.ndarray, spots: list) -> np.ndarray:
     cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
 
     # Vẽ viền và ID
+    line_thick = max(1, int(2 * s_factor))
+    f_scale = max(0.3, 0.5 * s_factor)
+    f_thick = max(1, int(2 * s_factor))
+
     for spot in spots:
         polygon = np.array(spot["polygon"], np.int32)
         color = COLORS.get(spot["status"], (120, 120, 120))
-        cv2.polylines(frame, [polygon], isClosed=True, color=color, thickness=2)
+        cv2.polylines(frame, [polygon], isClosed=True, color=color, thickness=line_thick)
 
         # Tính toán điểm chính giữa để ghi chữ
         cx = int(np.mean(polygon[:, 0]))
         cy = int(np.mean(polygon[:, 1]))
         label = f"#{spot['id']}"
         
-        cv2.putText(frame, label, (cx - 15, cy + 5), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        cv2.putText(frame, label, (cx - int(15 * s_factor), cy + int(5 * s_factor)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, f_scale, (255, 255, 255), f_thick)
     return frame
 
 # =====================================================================
@@ -258,6 +266,16 @@ with st.sidebar:
     st.header("Cấu hình hệ thống")
     api_url = st.text_input("API Base URL", value=API_BASE)
     
+    st.subheader("📍 Khu vực đỗ xe")
+    try:
+        poly_list = requests.get(f"{API_BASE}/polygons").json()
+        selected_poly = st.selectbox("Chọn bãi đỗ", poly_list if isinstance(poly_list, list) else ["default"])
+    except:
+        selected_poly = st.selectbox("Chọn bãi đỗ", ["default"])
+    
+    # Hiển thị thông tin hỗ trợ căn chỉnh
+    st.caption("ℹ️ Hệ thống tự động co giãn Polygon để khớp với video.")
+
     st.subheader("Ngưỡng tin cậy ")
     car_conf = st.slider("🚗 Phát hiện Xe ", 0.0, 1.0, 0.40, 0.05)
     free_conf = st.slider("🟢 Phát hiện Chỗ trống", 0.0, 1.0, 0.25, 0.05)
@@ -305,7 +323,7 @@ if mode == "Phát hiện từ Ảnh":
         with st.spinner("🔍 Đang phân tích ảnh qua AI Server..."):
             try:
                 image_b64 = numpy_to_base64(image_np)
-                result = call_image_api(image_b64, current_config)
+                result = call_image_api(image_b64, current_config, selected_poly)
                 
                 # Vẽ box lên ảnh
                 annotated_img = draw_spots(image_np.copy(), result["spots"])
@@ -360,7 +378,8 @@ elif mode == "Phát hiện từ Video":
                 try:
                     # Gửi file video
                     files = {"video": (uploaded_video.name, uploaded_video.getvalue(), "video/mp4")}
-                    r = requests.post(f"{API_BASE}/session/upload", files=files)
+                    data = {"polygon_id": selected_poly}
+                    r = requests.post(f"{API_BASE}/session/upload", files=files, data=data)
                     r.raise_for_status()
                     
                     sid = r.json()["session_id"]
@@ -375,12 +394,14 @@ elif mode == "Phát hiện từ Video":
         st.subheader("🎞️ Live Stream - AI Detection")
         
         # URL stream MJPEG từ API Server
-        stream_url = f"{API_BASE}/session/{sid}/stream?car_confidence={car_conf}&free_confidence={free_conf}"
+        stream_url = f"{API_BASE}/session/{sid}/stream?car_confidence={car_conf}&free_confidence={free_conf}&skip_frames={skip_frames}"
         
-        # Sử dụng thẻ img HTML cơ bản nhất để hứng luồng MJPEG
-        components.html(f"""
-            <img src="{stream_url}" style="width:100%; border: 2px solid #ccc; border-radius: 10px;">
-        """, height=600)
+        # Sử dụng thẻ img HTML cơ bản với CSS để tự co giãn theo khung hình
+        st.markdown(f"""
+            <div style="width: 100%; position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border: 2px solid rgba(99,179,237,0.3); border-radius: 12px;">
+                <img src="{stream_url}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; background: #000;">
+            </div>
+        """, unsafe_allow_html=True)
 
         if st.button("🛑 Dừng Video & Xoá Session"):
             del st.session_state["stream_sid"]

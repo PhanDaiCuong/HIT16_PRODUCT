@@ -30,9 +30,6 @@ models/*.h5
 # Ignore entire data directory (keep only structure if needed)
 data/
 
-# Ignore entire logs directory
-logs/
-
 # Ignore entire scripts directory
 scripts/
 

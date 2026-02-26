@@ -1,6 +1,6 @@
 # 🅿️ ParkVision AI: Hệ Thống Giám Sát Bãi Đỗ Xe Thông Minh Thời Gian Thực
 
-Một hệ thống quản lý bãi đỗ xe dựa trên AI, có khả năng mở rộng và được xây dựng với kiến trúc hiện đại, thiết kế để phát hiện phương tiện và phân tích việc sử dụng chỗ đỗ hiệu quả bằng YOLOv8.
+Một hệ thống quản lý bãi đỗ xe dựa trên AI, có khả năng mở rộng và được xây dựng với kiến trúc hiện đại, thiết kế để phát hiện phương tiện và phân tích việc sử dụng chỗ đỗ hiệu quả bằng YOLO26s.
 
 ## 🚀 Tính Năng Nổi Bật
 

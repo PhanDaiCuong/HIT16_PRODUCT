@@ -4,7 +4,7 @@ Một hệ thống quản lý bãi đỗ xe dựa trên AI, có khả năng mở
 
 ## 🚀 Tính Năng Nổi Bật
 
-- **Deep Learning**: Phát hiện xe và ô đỗ độ chính xác cao với YOLOv8.
+- **Deep Learning**: Phát hiện xe và ô đỗ độ chính xác cao với YOLO26s.
 - **Trực Quan Hóa**: Hiển thị trạng thái ô đỗ (Đỏ/Xanh) phong cách HUD.
 - **Cân Chỉnh Động**: Tự động khớp vùng đỗ với mọi độ phân giải video.
 - **Giao Diện Kép**: Kết hợp linh hoạt giữa API và Dashboard.
@@ -74,7 +74,7 @@ pip install -r requirements.txt
 ## 📦 Thư Viện Chính
 
 - **Framework**: FastAPI (Backend) / Streamlit (Frontend)
-- **AI Engine**: Ultralytics (YOLOv8)
+- **AI Engine**: Ultralytics (YOLO26s)
 - **Computer Vision**: OpenCV
 - **Xử lý dữ liệu**: Pydantic, NumPy
 

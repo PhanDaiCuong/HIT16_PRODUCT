@@ -1,0 +1,15 @@
+# Core Dependencies
+fastapi==0.115.8
+uvicorn==0.34.0
+pydantic==2.10.6
+# Streamlit
+streamlit==1.42.2
+pandas==2.2.3
+pillow==11.1.0
+# Computer Vision
+ultralytics==8.3.78
+opencv-python==4.11.0.86
+numpy==1.26.4
+# Utilities
+requests==2.32.3
+PyYAML==6.0.2
